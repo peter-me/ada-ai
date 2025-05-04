@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+  <title>ChatAda</title>
+</head>
+<body>
+  <div id="login-screen">
+    <h1>Indstillinger (for forældre)</h1>
+    <label>
+      Adgangskode:
+      <input type="password" id="parent-password" />
+    </label>
+    <button id="unlock">Åbn</button>
+    <div id="settings" style="display:none;">
+      <label>
+        OpenAI API-nøgle:
+        <input type="password" id="api-key" />
+      </label>
+      <button id="save-key">Gem</button>
+    </div>
+  </div>
+
+  <div id="chat-app" style="display:none;">
+    <h1>Børne-Chat</h1>
+    <div id="messages"></div>
+    <textarea id="prompt" placeholder="Skriv her…"></textarea>
+    <button id="send">Send</button>
+  </div>
+
+  <script>
+  //— Configuration —//
+  const PARENT_PASSWORD_HASH = '5f4dcc3b5aa765d61d8327deb882cf99'; // "password" MD5 example
+
+  //— Helpers —//
+  function md5(s) {
+    // lightweight MD5 (from https://cdnjs.cloudflare.com)…
+    return CryptoJS.MD5(s).toString();
+  }
+
+  //— Login & Settings —//
+  document.getElementById('unlock').onclick = () => {
+    const pw = document.getElementById('parent-password').value;
+    if (md5(pw) === PARENT_PASSWORD_HASH) {
+      document.getElementById('settings').style.display = 'block';
+    } else {
+      alert('Forkert kodeord!');
+    }
+  };
+  document.getElementById('save-key').onclick = () => {
+    const key = document.getElementById('api-key').value.trim();
+    localStorage.setItem('OPENAI_KEY', key);
+    initChat();
+  };
+
+  //— Chat Initialization —//
+  async function initChat() {
+    const key = localStorage.getItem('OPENAI_KEY');
+    if (!key) return;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('chat-app').style.display = 'block';
+  }
+  initChat();
+
+  //— Chat Logic —//
+  document.getElementById('send').onclick = async () => {
+    const promptEl = document.getElementById('prompt');
+    const text = promptEl.value.trim();
+    if (!text) return;
+    addMessage('Bruger', text);
+    promptEl.value = '';
+    const messages = [
+      { role: 'system', content:
+        `Du er en venlig, børne-venlig assistent der kun taler dansk. 
+         Undgå kontroversielle emner; hvis du ikke ved det, sig "Det ved jeg ikke".` },
+      ...getHistory(),
+      { role: 'user', content: text },
+    ];
+    addMessage('Bot', '…venter…');
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'Authorization':'Bearer '+localStorage.getItem('OPENAI_KEY')
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages,
+        max_tokens: 200,
+      })
+    });
+    const data = await res.json();
+    const reply = data.choices?.[0]?.message?.content || 'Det ved jeg ikke';
+    replaceLastMessage('Bot', reply);
+    saveToHistory({role:'assistant', content:reply});
+  };
+
+  function addMessage(who, text) {
+    const m = document.createElement('div');
+    m.className = `message ${who.toLowerCase()}`;
+    m.innerText = `${who}: ${text}`;
+    document.getElementById('messages').append(m);
+  }
+  function replaceLastMessage(who, text) {
+    const msgs = document.querySelectorAll('#messages .message');
+    const last = msgs[msgs.length-1];
+    last.innerText = `${who}: ${text}`;
+  }
+  function getHistory() {
+    return JSON.parse(localStorage.getItem('chat_history')||'[]');
+  }
+  function saveToHistory(msg) {
+    const h = getHistory();
+    h.push(msg);
+    if (h.length>10) h.shift();
+    localStorage.setItem('chat_history', JSON.stringify(h));
+  }
+
+  //— PWA: register service worker —//
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js');
+  }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</body>
+</html>
