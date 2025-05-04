@@ -1,2 +1,2 @@
 # ada-ai
-Small pwa app for kids to chat with
+Small app for kids to chat with
