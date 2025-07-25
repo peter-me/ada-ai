@@ -29,6 +29,7 @@
     <div id="messages"></div>
     <textarea id="prompt" placeholder="Skriv her…"></textarea>
     <button id="send">Send</button>
+    <button id="generate-image">Lav billede</button>
   </div>
 
   <script>
@@ -62,9 +63,14 @@
     if (!key) return;
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('chat-app').style.display = 'block';
-    getHistory().forEach(m =>
-      addMessage(m.role === 'user' ? 'Bruger' : 'Bot', m.content)
-    );
+    getHistory().forEach(m => {
+      const who = m.role === 'user' ? 'Bruger' : 'Bot';
+      if (m.image) {
+        addImage(who, m.image);
+      } else {
+        addMessage(who, m.content);
+      }
+    });
   }
   initChat();
 
@@ -103,16 +109,64 @@
     saveToHistory({role:'assistant', content:reply});
   };
 
+  document.getElementById('generate-image').onclick = generateImage;
+
+  async function generateImage() {
+    const promptEl = document.getElementById('prompt');
+    const text = promptEl.value.trim();
+    if (!text) return;
+    addMessage('Bruger', text);
+    saveToHistory({role:'user', content:text});
+    promptEl.value = '';
+    addMessage('Bot', '…venter…');
+
+    const res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + localStorage.getItem('OPENAI_KEY')
+      },
+      body: JSON.stringify({ prompt: text, n: 1, size: '512x512' })
+    });
+    const data = await res.json();
+    const url = data.data?.[0]?.url;
+    if (url) {
+      replaceLastMessageWithImage('Bot', url);
+      saveToHistory({role:'assistant', image:url});
+    } else {
+      replaceLastMessage('Bot', 'Kunne ikke generere billede');
+    }
+  }
+
   function addMessage(who, text) {
     const m = document.createElement('div');
     m.className = `message ${who.toLowerCase()}`;
     m.innerText = `${who}: ${text}`;
     document.getElementById('messages').append(m);
   }
+  function addImage(who, url) {
+    const m = document.createElement('div');
+    m.className = `message ${who.toLowerCase()}`;
+    m.innerText = `${who}:`;
+    const img = document.createElement('img');
+    img.src = url;
+    m.appendChild(document.createElement('br'));
+    m.appendChild(img);
+    document.getElementById('messages').append(m);
+  }
   function replaceLastMessage(who, text) {
     const msgs = document.querySelectorAll('#messages .message');
     const last = msgs[msgs.length-1];
     last.innerText = `${who}: ${text}`;
+  }
+  function replaceLastMessageWithImage(who, url) {
+    const msgs = document.querySelectorAll('#messages .message');
+    const last = msgs[msgs.length-1];
+    last.innerText = `${who}:`;
+    const img = document.createElement('img');
+    img.src = url;
+    last.appendChild(document.createElement('br'));
+    last.appendChild(img);
   }
   function getHistory() {
     return JSON.parse(localStorage.getItem('chat_history')||'[]');
